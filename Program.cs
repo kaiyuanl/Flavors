@@ -10,35 +10,116 @@ namespace Flavors
 
     class Program
     {
-        static class Result
+        public enum Flavor
         {
-            public static string Debug = "Debug";
-            public static string Release = "Release";
-            public static string Unknown = "Unknown";
+            Debug,
+            Release,
+            Unknown
         }
 
-        static string GetFlavor(string file)
+        public class Result
         {
+            public string FullName;
+
+            public Flavor Flavor;
+
+            public ProcessorArchitecture TargetPlatform;
+
+            public string TargetFramework;
+
+            public string ErrorMessage;
+
+            public bool HasError;
+
+            public Result(
+                string fullName, 
+                Flavor flavor, 
+                ProcessorArchitecture targetPlatform, 
+                string targetFramework, 
+                string errorMsg
+                )
+
+            {
+                this.FullName = fullName;
+                this.Flavor = flavor;
+                this.TargetPlatform = targetPlatform;
+                this.TargetFramework = targetFramework;
+                if(errorMsg==null)
+                {
+                    this.HasError = false;
+                }
+                else
+                {
+                    this.HasError = true;
+                    this.ErrorMessage = errorMsg;
+                }
+            }
+        }
+
+        static Result GetFlavor(string file)
+        {
+            string fullName;
+            Flavor flavor = Flavor.Unknown;
+            ProcessorArchitecture targetPlatform;
+            string targetFramework;
+
+            AssemblyName assemblyName;
+            Assembly assembly;
+
+            //Determine target platform
             try
             {
-                file = Path.GetFullPath(file);
-                Assembly assembly = Assembly.LoadFile(file);
+                assemblyName = AssemblyName.GetAssemblyName(file);
+                fullName = assemblyName.FullName;
+                targetPlatform = assemblyName.ProcessorArchitecture;
+            }
+            catch(Exception ex)
+            {
+                return new Result(
+                    "Unknown", 
+                    Flavor.Unknown, 
+                    ProcessorArchitecture.None, 
+                    "Unknown", 
+                    string.Format("Determine target platform failed. {0}", ex.Message)
+                    );
+            }
+
+            //Determine flavor
+            try
+            {
+                assembly = Assembly.Load(assemblyName);
+                flavor = Flavor.Release;
+
                 foreach (object attribute in assembly.GetCustomAttributes(false))
                 {
                     if (attribute.GetType() == Type.GetType("System.Diagnostics.DebuggableAttribute"))
                     {
                         if(((System.Diagnostics.DebuggableAttribute)attribute).IsJITTrackingEnabled)
                         {
-                            return Result.Debug;
+                            flavor = Flavor.Debug;
                         }
                     }
                 }
-                return Result.Release;
             }
             catch(Exception ex)
             {
-                return string.Format("{0} : {1}", Result.Unknown, ex.Message);
+                return new Result(
+                    fullName, 
+                    Flavor.Unknown, 
+                    targetPlatform, 
+                    "Unknown", 
+                    string.Format("Determine flavor failed. {0}", ex.Message)
+                    );
             }
+
+            targetFramework = assembly.ImageRuntimeVersion;
+            return new Result(
+                fullName, 
+                flavor, 
+                targetPlatform, 
+                targetFramework, 
+                null
+                );
         }
 
         static bool IsDir(string path)
@@ -66,7 +147,24 @@ namespace Flavors
                     Console.WriteLine("-----Directory {0}-----", Path.GetFullPath(path));
                     foreach(string file in Directory.GetFiles(path))
                     {
-                        PrintResult(file, GetFlavor(file));
+                        string fullName;
+                        try
+                        {
+                            fullName = Path.GetFullPath(file);
+                        }
+                        catch(Exception ex)
+                        {
+                            PrintResult(file, new Result(
+                                "Unknown", 
+                                Flavor.Unknown, 
+                                ProcessorArchitecture.None, 
+                                "Unknown", 
+                                string.Format("Get full path failed. {0}", ex.Message))
+                                );
+
+                            continue;
+                        }
+                        PrintResult(fullName, Program.GetFlavor(fullName));
                     }
                     Console.WriteLine("");
                 }
@@ -77,7 +175,18 @@ namespace Flavors
                 else //Wildcard under current directory
                 {
                     DirectoryInfo dirInfo = new DirectoryInfo(Directory.GetCurrentDirectory());
-                    FileInfo[] files = dirInfo.GetFiles(path);
+                    FileInfo[] files;
+
+                    try
+                    {
+                        files = dirInfo.GetFiles(path);
+                    }
+                    catch
+                    {
+                        Console.WriteLine("You have to use wildcard under current directory.");
+                        continue;
+                    }
+
                     if (files.Length == 0)
                     {
                         Console.WriteLine("Cannot find file or directory {0}", path);
@@ -93,9 +202,19 @@ namespace Flavors
             }
         }
 
-        static void PrintResult(string file, string result)
+        static void PrintResult(string file, Result result)
         {
-            Console.WriteLine("{0}\t\t\t{1}", Path.GetFullPath(file), result);
+            
+            Console.WriteLine("Assembly: \t\t{0}", file);
+            Console.WriteLine("Full Name: \t\t{0}", result.FullName);
+            Console.WriteLine("Configuration:\t\t{0}", result.Flavor);
+            Console.WriteLine("Target Platform:\t{0}", result.TargetPlatform.ToString());
+            Console.WriteLine("Target Framework:\t{0}", result.TargetFramework);
+            if (result.HasError)
+            {
+                Console.WriteLine("Error Message: \t\t{0}", result.ErrorMessage);
+            }
+            Console.WriteLine("");
         }
 
         static void Helper()
