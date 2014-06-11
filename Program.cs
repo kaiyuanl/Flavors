@@ -183,7 +183,7 @@ namespace Flavors
                     }
                     catch
                     {
-                        Console.WriteLine("You have to use wildcard under current directory.");
+                        Console.WriteLine("You can ONLY use wildcard under current directory.");
                         continue;
                     }
 
